@@ -1,0 +1,8 @@
+data/articles/
+data/cleaned/
+data/structured/
+data/wiki.db
+data/wiki_dump.xml.gz
+__pycache__/
+*.pyc
+.env
