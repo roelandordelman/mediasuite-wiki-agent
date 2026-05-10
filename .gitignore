@@ -1,8 +1,12 @@
 data/articles/
 data/cleaned/
 data/structured/
+data/chunks/
+data/milvus_wiki.db
+data/wiki.ttl
 data/wiki.db
 data/wiki_dump.xml.gz
+stores/fuseki_data/
 __pycache__/
 *.pyc
 .env
