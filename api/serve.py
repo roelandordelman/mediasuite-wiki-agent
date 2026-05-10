@@ -25,14 +25,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Import tool implementations from the MCP server module.
-# The singletons (Milvus client, embedder) are shared with the MCP server if
-# run in the same process — here they initialise lazily on first request.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from mcp.server import wiki_search as _wiki_search
-from mcp.server import wiki_lookup as _wiki_lookup
-from mcp.server import wiki_metadata as _wiki_metadata
-from mcp.server import wiki_query as _wiki_query
+# Import tool implementations from the local mcp/server.py.
+# We add the mcp/ subdirectory to sys.path and import 'server' directly to
+# avoid shadowing the installed 'mcp' SDK package (which also has mcp.server).
+sys.path.insert(0, str(Path(__file__).parent.parent / "mcp"))
+from server import wiki_search as _wiki_search
+from server import wiki_lookup as _wiki_lookup
+from server import wiki_metadata as _wiki_metadata
+from server import wiki_query as _wiki_query
 
 app = FastAPI(title="Beeld & Geluid Wiki API")
 app.add_middleware(
