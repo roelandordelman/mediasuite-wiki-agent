@@ -186,28 +186,71 @@ Named graph: `https://wiki.beeldengeluid.nl/graph`
 
 ### Named SPARQL queries
 
-Eight query templates in `mcp/sparql_queries.py`, callable via `wiki_query`:
+14 query templates in `mcp/sparql_queries.py`, callable via `wiki_query` or the REST API:
 
 | Query | Question it answers |
 |---|---|
 | `persons_by_function` | Who are the Dutch TV presenters / directors / etc.? |
 | `persons_active_in_period` | Who was active in Dutch media between year X and Y? |
 | `persons_collaborated_with` | Who collaborated with person X? |
+| `persons_by_category` | Who is in wiki category X (e.g. "Acteur", "Zanger")? |
+| `persons_known_for` | Who is known for production title X? |
 | `productions_by_genre` | Which productions are in genre X? |
 | `productions_in_period` | Which productions aired between year X and Y? |
 | `productions_featuring_person` | Which productions feature person X? |
+| `productions_by_medium` | Which productions are for TV / Radio / Film? |
+| `production_summary` | All structured fields for a specific production |
 | `article_for_gtaa_uri` | Which wiki article is linked to GTAA URI X? |
 | `all_broadcasters` | Which broadcasters are in the graph? |
+| `person_summary` | All structured fields for a specific person |
+| `recently_edited` | Most recently edited articles (freshness check) |
+| `articles_by_gtaa_scheme` | All articles linked to a given GTAA concept scheme |
 
 ### Alignment with mediasuite-knowledge-base
 
 The Fuseki setup, loading pattern, and SPARQL query structure are intentionally aligned with the [mediasuite-knowledge-base](https://github.com/roelandordelman/mediasuite-knowledge-base) project. Both datasets live in the same Fuseki instance (separate named graphs), use the same Graph Store Protocol loading approach, and expose named SPARQL query templates via the same `run_query()` pattern.
 
-## What is next (Phase 3)
+## What is built (Chatbot integration — complete)
+
+The wiki agent is connected to the [media-suite-learn-chatbot](https://github.com/roelandordelman/media-suite-learn-chatbot) as a third retrieval path. When a researcher asks a question, the chatbot runs three paths in parallel:
+
+1. **Structural** — Fuseki SPARQL against the Media Suite knowledge graph (tools, collections, workflows)
+2. **Narrative** — ChromaDB semantic search against Media Suite documentation
+3. **Wiki** — Milvus semantic search against the wiki index, via the wiki REST API
+
+Wiki results are only added to the answer context when cosine similarity ≥ 0.70, so documentation-only questions pay no latency or context penalty.
+
+### REST API
+
+Alongside the MCP server, the wiki exposes a plain JSON REST API for consumption by non-MCP clients:
+
+```bash
+python3.12 -m uvicorn api.serve:app --port 8002
+```
+
+Endpoints: `GET /health`, `POST /search`, `POST /lookup`, `POST /metadata`, `POST /query`
+
+The REST API wraps the same tool functions as the MCP server. Running only the REST API (not the MCP server) is sufficient for chatbot integration.
+
+### Evaluation
+
+```bash
+# Start wiki REST API, then:
+python3.12 evaluation/evaluate.py --mode rest --verbose
+```
+
+Evaluates:
+- **Hit@5, MRR** for `wiki_search` — 15 questions covering persons, genres, productions, English queries, spelling variants
+- **Accuracy** for `wiki_lookup` — 7 exact title lookups including a non-existent title
+- **Pass/fail** for `wiki_query` — 7 named SPARQL queries with result count assertions
+
+## What is next (Phase 3 — deferred)
 
 Phase 3 aligns the wiki knowledge graph with the NDE Termennetwerk, publishing it as linked open data. The GTAA links already in the graph make this straightforward: the wiki agent becomes a node in the Dutch heritage linked data network, and wiki articles become discoverable via GTAA URIs from any NDE-connected system.
 
 Practically: expose `http://localhost:3030/wiki/sparql` publicly, register with the NDE Termennetwerk, and the wiki's person and production articles are addressable from the broader Dutch heritage infrastructure without any further changes.
+
+This is an institutional step — it depends on NISV infrastructure integration and should be coordinated with the Sound and Vision linked data team. It is not a technical blocker for current chatbot use.
 
 ## Status
 
@@ -222,12 +265,29 @@ Practically: expose `http://localhost:3030/wiki/sparql` publicly, register with 
 | 1 | Sync job | `index/sync.py` | Pending |
 | 2 | RDF graph | `index/build_rdf.py` | Done — 302,997 triples |
 | 2 | Fuseki loader | `index/load_fuseki.py` | Done |
-| 2 | Named SPARQL queries | `mcp/sparql_queries.py` | Done — 8 queries |
+| 2 | Named SPARQL queries | `mcp/sparql_queries.py` | Done — 14 queries |
 | 2 | `wiki_query` tool | `mcp/server.py` | Done |
-| 3 | NDE Termennetwerk alignment | — | Planned |
+| integration | REST API | `api/serve.py` | Done |
+| integration | Chatbot integration | media-suite-learn-chatbot | Done |
+| integration | Evaluation framework | `evaluation/evaluate.py` | Done |
+| 3 | NDE Termennetwerk alignment | — | Deferred (institutional) |
+
+## Running
+
+```bash
+# MCP server (for MCP clients)
+python3.12 mcp/server.py              # stdio transport
+python3.12 mcp/server.py --test       # smoke test
+
+# REST API (for the chatbot and other HTTP clients)
+python3.12 -m uvicorn api.serve:app --port 8002
+
+# Evaluation (REST API must be running)
+python3.12 evaluation/evaluate.py --mode rest --verbose
+```
 
 ## Relationship to other repos
 
-- **mediasuite-knowledge-base** — documentation KB (how to use the Media Suite); separate Milvus collection, separate MCP tools; do not mix with wiki content
-- **media-suite-learn-chatbot** — the chatbot that calls both the documentation KB MCP and this wiki MCP
-- **mediasuite-agent** — the main agent layer (embedding API, Milvus, orchestration); this MCP server registers with it
+- **mediasuite-knowledge-base** — Media Suite documentation KB (how to use the Media Suite); separate infrastructure, separate question domain; do not mix with wiki content
+- **media-suite-learn-chatbot** — calls the wiki REST API as a third retrieval path alongside ChromaDB (documentation) and Fuseki (Media Suite knowledge graph)
+- **mediasuite-agent** — the main agent layer; this MCP server can register with it for MCP-based access
