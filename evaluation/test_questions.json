@@ -1,0 +1,193 @@
+{
+  "_comment": "Test questions for evaluating wiki retrieval quality. Each question has an expected article title (or list of titles) and the retrieval method being tested.",
+  "wiki_search": [
+    {
+      "id": "s01",
+      "question": "Wie is Rob de Nijs?",
+      "expected_title": "Rob de Nijs",
+      "category": "persoon_direct"
+    },
+    {
+      "id": "s02",
+      "question": "Wat is een praatprogramma?",
+      "expected_title": "Praatprogramma",
+      "category": "genre"
+    },
+    {
+      "id": "s03",
+      "question": "Nederlandse televisie in de jaren zeventig",
+      "expected_titles": ["Decennium", "Televisie"],
+      "category": "thematisch",
+      "note": "partial match — any decade overview or relevant article counts"
+    },
+    {
+      "id": "s04",
+      "question": "Who were the key presenters of Dutch public television?",
+      "expected_category": "Personen",
+      "category": "engelstalig",
+      "note": "English query — check that results are persons"
+    },
+    {
+      "id": "s05",
+      "question": "Wat doet AVRO?",
+      "expected_title": "AVRO",
+      "category": "omroep"
+    },
+    {
+      "id": "s06",
+      "question": "Nederlandse documentaires over natuur",
+      "expected_category": "Producties",
+      "category": "productie_genre"
+    },
+    {
+      "id": "s07",
+      "question": "Johan Cruyff",
+      "expected_title": "Johan Cruijff",
+      "category": "persoon_spellingsvariant",
+      "note": "Spelling variant — wiki uses 'Cruijff'"
+    },
+    {
+      "id": "s08",
+      "question": "Mies Bouwman presentatrice",
+      "expected_title": "Mies Bouwman",
+      "category": "persoon_functie"
+    },
+    {
+      "id": "s09",
+      "question": "Wat is het Jeugdjournaal?",
+      "expected_title": "Jeugdjournaal",
+      "category": "productie_direct"
+    },
+    {
+      "id": "s10",
+      "question": "Biografie Wim Sonneveld",
+      "expected_title": "Wim Sonneveld",
+      "category": "persoon_direct"
+    },
+    {
+      "id": "s11",
+      "question": "cabaret in Nederland",
+      "expected_category": "Genres",
+      "category": "genre_thematisch"
+    },
+    {
+      "id": "s12",
+      "question": "Dutch radio history 1950s",
+      "expected_category": "Producties",
+      "category": "engelstalig_historisch"
+    },
+    {
+      "id": "s13",
+      "question": "Wie zijn de makers van Studio Sport?",
+      "expected_title": "Studio Sport",
+      "category": "productie_direct"
+    },
+    {
+      "id": "s14",
+      "question": "Annie M.G. Schmidt",
+      "expected_title": "Annie M.G. Schmidt",
+      "category": "persoon_direct"
+    },
+    {
+      "id": "s15",
+      "question": "televisie Nederland jaren vijftig",
+      "expected_category": "Decennia",
+      "category": "historisch_decennium"
+    }
+  ],
+  "wiki_lookup": [
+    {
+      "id": "l01",
+      "title": "Rob de Nijs",
+      "should_find": true,
+      "expected_article_type": "persoon"
+    },
+    {
+      "id": "l02",
+      "title": "Praatprogramma",
+      "should_find": true,
+      "expected_article_type": "genre"
+    },
+    {
+      "id": "l03",
+      "title": "Jeugdjournaal",
+      "should_find": true,
+      "expected_article_type": "productie"
+    },
+    {
+      "id": "l04",
+      "title": "AVRO",
+      "should_find": true,
+      "expected_article_type": "omroep"
+    },
+    {
+      "id": "l05",
+      "title": "Mies Bouwman",
+      "should_find": true,
+      "expected_article_type": "persoon"
+    },
+    {
+      "id": "l06",
+      "title": "Dit artikel bestaat niet",
+      "should_find": false,
+      "note": "Non-existent title — should return null or semantic fallback"
+    },
+    {
+      "id": "l07",
+      "title": "Annie M.G. Schmidt",
+      "should_find": true,
+      "expected_article_type": "persoon"
+    }
+  ],
+  "wiki_query": [
+    {
+      "id": "q01",
+      "query_name": "persons_by_function",
+      "params": {"function": "Presentator"},
+      "check": "len(results) > 10",
+      "note": "Should return many presentators"
+    },
+    {
+      "id": "q02",
+      "query_name": "productions_by_genre",
+      "params": {"genre": "documentaire"},
+      "check": "len(results) > 5",
+      "note": "Should return documentaires"
+    },
+    {
+      "id": "q03",
+      "query_name": "persons_active_in_period",
+      "params": {"start_year": 1960, "end_year": 1975},
+      "check": "len(results) > 20",
+      "note": "Many persons active in this period"
+    },
+    {
+      "id": "q04",
+      "query_name": "all_broadcasters",
+      "params": {},
+      "check": "len(results) > 5",
+      "note": "Should return AVRO, KRO, VARA, etc."
+    },
+    {
+      "id": "q05",
+      "query_name": "productions_by_medium",
+      "params": {"medium": "Televisie"},
+      "check": "len(results) > 50",
+      "note": "Most productions are television"
+    },
+    {
+      "id": "q06",
+      "query_name": "persons_by_category",
+      "params": {"category": "Acteur"},
+      "check": "len(results) > 10",
+      "note": "Should return actors"
+    },
+    {
+      "id": "q07",
+      "query_name": "recently_edited",
+      "params": {"limit": 10},
+      "check": "len(results) == 10",
+      "note": "Most recently edited articles"
+    }
+  ]
+}

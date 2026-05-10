@@ -269,15 +269,21 @@ def wiki_query(query_name: str, params: dict) -> list[dict]:
     with whom, which productions feature a specific person.
 
     Available query names and their parameters:
-      persons_by_function        function (str, e.g. "presentator")
-      persons_active_in_period   start_year (int), end_year (int)
-      persons_collaborated_with  person_uri (str, full wiki URL)
-      productions_by_genre       genre (str, e.g. "documentaire")
-      productions_in_period      start_year (int), end_year (int)
+      persons_by_function           function (str, e.g. "presentator")
+      persons_active_in_period      start_year (int), end_year (int)
+      persons_collaborated_with     person_uri (str, full wiki URL)
+      persons_by_category           category (str, e.g. "Acteur")
+      persons_known_for             production_title (str, partial match)
+      productions_by_genre          genre (str, e.g. "documentaire")
+      productions_in_period         start_year (int), end_year (int)
       productions_featuring_person  person_uri (str, full wiki URL)
-      article_for_gtaa_uri       gtaa_uri (str)
-      all_broadcasters           (no params)
-      person_summary             person_uri (str, full wiki URL)
+      productions_by_medium         medium (str, e.g. "Televisie")
+      article_for_gtaa_uri          gtaa_uri (str)
+      all_broadcasters              (no params)
+      person_summary                person_uri (str, full wiki URL)
+      production_summary            production_uri (str, full wiki URL)
+      recently_edited               limit (int, e.g. 20)
+      articles_by_gtaa_scheme       scheme_uri (str, GTAA scheme base URI)
 
     Args:
         query_name: One of the named queries listed above.

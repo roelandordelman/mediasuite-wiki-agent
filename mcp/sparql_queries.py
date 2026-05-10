@@ -149,6 +149,90 @@ SELECT ?pred ?obj WHERE {{
 }}
 """,
 
+    # Production summary: all structured fields for one production
+    # param: production_uri
+    "production_summary": PREFIXES + """
+SELECT ?pred ?obj WHERE {{
+  {graph} {{
+    <{production_uri}> ?pred ?obj .
+  }}
+}}
+""",
+
+    # Which productions are for TV, Radio, or Film?
+    # param: medium (e.g. "Televisie", "Radio", "Film")
+    "productions_by_medium": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?medium ?genre ?start ?end WHERE {{
+  {graph} {{
+    ?uri a schema:CreativeWork ;
+         schema:name ?name ;
+         beng:medium ?medium .
+    FILTER(LCASE(STR(?medium)) = LCASE("{medium}"))
+    OPTIONAL {{ ?uri schema:genre ?genre }}
+    OPTIONAL {{ ?uri beng:periodStart ?start }}
+    OPTIONAL {{ ?uri beng:periodEnd ?end }}
+  }}
+}} ORDER BY ?start ?name
+""",
+
+    # Find all persons in a wiki category (e.g. "Acteur", "Presentator", "Zanger")
+    # param: category (e.g. "Acteur" matches dcterms:subject "Acteur")
+    "persons_by_category": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?cat WHERE {{
+  {graph} {{
+    ?uri a schema:Person ;
+         schema:name ?name ;
+         dcterms:subject ?cat .
+    FILTER(LCASE(STR(?cat)) = LCASE("{category}"))
+  }}
+}} ORDER BY ?name
+""",
+
+    # Which persons are known for a specific production?
+    # Uses schema:subjectOf (URI link) and beng:knownForTitle (literal fallback)
+    # param: production_title (partial match)
+    "persons_known_for": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?knownFor WHERE {{
+  {graph} {{
+    ?uri a schema:Person ;
+         schema:name ?name .
+    {{
+      ?uri schema:subjectOf ?productionUri .
+      ?productionUri schema:name ?knownFor .
+      FILTER(CONTAINS(LCASE(STR(?knownFor)), LCASE("{production_title}")))
+    }} UNION {{
+      ?uri beng:knownForTitle ?knownFor .
+      FILTER(CONTAINS(LCASE(STR(?knownFor)), LCASE("{production_title}")))
+    }}
+  }}
+}} ORDER BY ?name
+""",
+
+    # Most recently edited articles (freshness check)
+    # param: limit (int, e.g. 20)
+    "recently_edited": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?type ?modified WHERE {{
+  {graph} {{
+    ?uri schema:name ?name ;
+         a ?type ;
+         dcterms:modified ?modified .
+    FILTER(?type IN (schema:Person, schema:CreativeWork, schema:Organization))
+  }}
+}} ORDER BY DESC(?modified) LIMIT {limit}
+""",
+
+    # Articles linked to a given GTAA concept scheme
+    # param: scheme_uri (e.g. "http://data.beeldengeluid.nl/gtaa/Persoonsnamen")
+    "articles_by_gtaa_scheme": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?gtaa WHERE {{
+  {graph} {{
+    ?uri schema:name ?name ;
+         skos:exactMatch ?gtaa .
+    FILTER(STRSTARTS(STR(?gtaa), "{scheme_uri}"))
+  }}
+}} ORDER BY ?name
+""",
+
 }
 
 
