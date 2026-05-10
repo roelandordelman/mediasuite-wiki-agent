@@ -189,28 +189,35 @@ def format_sparql_results(query_name: str, rows: list[dict]) -> str:
     return fn(rows)
 
 
+_STRUCTURED_HEADER = "[Gestructureerde data — volledige lijst uit de Beeld & Geluid Wiki kennisgraaf. Presenteer deze lijst volledig en voeg geen informatie toe uit andere bronnen.]"
+
+
 def _fmt_persons_period(rows: list[dict]) -> str:
     if not rows:
         return ""
-    sample = rows[:30]
-    lines = [f"# Persons active in this period ({len(rows)} found, showing {len(sample)})"]
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Personen actief in deze periode ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
     for r in sample:
         name = r.get("name", "?")
         start = r.get("start", "?")
         end = r.get("end", "heden")
-        uri = r.get("uri", "")
-        line = f"- {name} (actief: {start}–{end})"
-        if uri:
-            line += f"  {uri}"
-        lines.append(line)
+        lines.append(f"- {name} (actief: {start}–{end})")
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
     return "\n".join(lines)
 
 
 def _fmt_productions_period(rows: list[dict]) -> str:
     if not rows:
         return ""
-    sample = rows[:30]
-    lines = [f"# Productions in this period ({len(rows)} found, showing {len(sample)})"]
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Producties in deze periode ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
     for r in sample:
         name = r.get("name", "?")
         start = r.get("start", "?")
@@ -222,31 +229,36 @@ def _fmt_productions_period(rows: list[dict]) -> str:
         if medium:
             line += f" [{medium}]"
         lines.append(line)
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
     return "\n".join(lines)
 
 
 def _fmt_persons_function(rows: list[dict]) -> str:
     if not rows:
         return ""
-    function = rows[0].get("function", "this role") if rows else "this role"
-    sample = rows[:30]
-    lines = [f"# Persons with function '{function}' ({len(rows)} found, showing {len(sample)})"]
+    function = rows[0].get("function", "deze rol") if rows else "deze rol"
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Personen met functie '{function}' ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
     for r in sample:
-        name = r.get("name", "?")
-        uri = r.get("uri", "")
-        line = f"- {name}"
-        if uri:
-            line += f"  {uri}"
-        lines.append(line)
+        lines.append(f"- {r.get('name', '?')}")
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
     return "\n".join(lines)
 
 
 def _fmt_productions_genre(rows: list[dict]) -> str:
     if not rows:
         return ""
-    genre = rows[0].get("genre", "this genre") if rows else "this genre"
-    sample = rows[:30]
-    lines = [f"# Productions in genre '{genre}' ({len(rows)} found, showing {len(sample)})"]
+    genre = rows[0].get("genre", "dit genre") if rows else "dit genre"
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Producties in genre '{genre}' ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
     for r in sample:
         name = r.get("name", "?")
         start = r.get("start", "")
@@ -255,6 +267,8 @@ def _fmt_productions_genre(rows: list[dict]) -> str:
         if start:
             line += f" ({start}–{end})" if end else f" ({start}–)"
         lines.append(line)
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
     return "\n".join(lines)
 
 
@@ -262,8 +276,11 @@ def _fmt_productions_medium(rows: list[dict]) -> str:
     if not rows:
         return ""
     medium = rows[0].get("medium", "") if rows else ""
-    sample = rows[:30]
-    lines = [f"# {medium} productions ({len(rows)} found, showing {len(sample)})"]
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"{medium}-producties ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
     for r in sample:
         name = r.get("name", "?")
         start = r.get("start", "")
@@ -272,25 +289,25 @@ def _fmt_productions_medium(rows: list[dict]) -> str:
         if start:
             line += f" ({start}–{end})" if end else f" ({start}–)"
         lines.append(line)
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
     return "\n".join(lines)
 
 
 def _fmt_broadcasters(rows: list[dict]) -> str:
     if not rows:
         return ""
-    lines = [f"# Dutch broadcasters in the wiki ({len(rows)})"]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Nederlandse omroepen in de wiki ({len(rows)}):",
+    ]
     for r in rows:
-        name = r.get("name", "?")
-        uri = r.get("uri", "")
-        line = f"- {name}"
-        if uri:
-            line += f"  {uri}"
-        lines.append(line)
+        lines.append(f"- {r.get('name', '?')}")
     return "\n".join(lines)
 
 
 def _fmt_generic(rows: list[dict]) -> str:
-    lines = []
+    lines = [_STRUCTURED_HEADER]
     for r in rows[:20]:
         lines.append(", ".join(f"{k}: {v}" for k, v in r.items()))
     return "\n".join(lines)
