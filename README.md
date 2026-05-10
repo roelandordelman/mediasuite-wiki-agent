@@ -1,114 +1,169 @@
 # mediasuite-wiki-agent
 
-Harvests, indexes, and serves the [Beeld & Geluid Wiki](https://wiki.beeldengeluid.nl) as an MCP tool for the CLARIAH Media Suite.
+Harvests, indexes, and serves the [Beeld & Geluid Wiki](https://wiki.beeldengeluid.nl) as an MCP server for the CLARIAH Media Suite.
 
-The wiki contains ~24,000 articles about persons, productions, genres, and topics in Dutch audiovisual media history, written by Sound and Vision staff and experts (CC-BY-SA). This project makes that content queryable by AI agents via semantic search and structured lookups, and links it to the GTAA controlled vocabulary so wiki articles connect to the broader Media Suite knowledge graph.
+The wiki contains ~24,000 articles about persons, productions, genres, and topics in Dutch audiovisual media history, written by Sound and Vision staff and experts (CC-BY-SA 4.0). This project makes that knowledge queryable by AI agents and connects it to the broader Sound and Vision linked data infrastructure via GTAA.
 
-## Prerequisites
+## Why this exists
 
-- Python 3.9+
-- `pip install -r requirements.txt`
-- Milvus instance (for the embedding index — Phase 1 embedding step)
+### The problem with the wiki
 
-## Pipeline
+The Beeld & Geluid Wiki is a curated knowledge base that Sound and Vision staff have been building for years. It has detailed biographical articles on thousands of Dutch media personalities, production histories, genre descriptions, and decade overviews. But it has two problems:
 
-The harvest pipeline runs in four sequential steps. Each step is resumable: re-running skips files that already exist.
+1. **It is fragile.** The wiki runs on Sound and Vision infrastructure with no guaranteed continuity and only a handful of active editors. If the server goes down, 24,000 articles of institutional knowledge disappear. This project creates a persistent, independently stored and indexed copy.
 
-### Step 1 — Harvest
+2. **It is not machine-readable.** The wiki is a collection of MediaWiki pages. An AI agent cannot query it efficiently, cannot find "all productions in genre X from the 1970s", and cannot connect a wiki article about Rob de Nijs to the Sound and Vision archive items that feature him. This project solves both.
 
-Fetch all articles from the MediaWiki API. Saves one JSON file per article to `data/articles/`.
+### Why MCP
 
-```bash
-python3 harvest/harvest_articles.py
+MCP (Model Context Protocol) is an open standard for connecting AI agents to external tools and data sources. Instead of baking wiki access into a specific chatbot, the wiki agent exposes its capabilities as MCP tools that any compatible AI agent can call.
+
+In practice this means: the Media Suite chatbot (and any future agent in the CLARIAH ecosystem) can call `wiki_search`, `wiki_lookup`, and `wiki_metadata` as tools — the same way a developer calls a function — without knowing anything about Milvus, embeddings, or the MediaWiki API. The wiki agent handles all of that internally.
+
+This also means the wiki agent is composable. It sits alongside other MCP servers (the Media Suite documentation knowledge base, NDE collection tools) and a routing layer decides which tool to call for a given question. A researcher asking "who was Rob de Nijs?" gets wiki biographical context. A researcher asking "how do I search by date in the Media Suite?" gets documentation. The same underlying infrastructure handles both.
+
+### The GTAA connection
+
+GTAA (Gemeenschappelijke Thesaurus Audiovisuele Archieven) is the controlled vocabulary Sound and Vision uses to catalogue its collection. Collection items in the archive are tagged with GTAA URIs for persons, genres, and topics. The wiki predates this linked data layer and has no GTAA links — but its article titles largely match GTAA preferred labels.
+
+During harvest, each wiki article is matched to a GTAA concept URI via the Sound and Vision SPARQL endpoint. Once that link exists, a researcher asking about Rob de Nijs can get:
+- Wiki biographical context (from this agent, via `wiki_lookup`)
+- Archive items featuring Rob de Nijs (via the GTAA URI → collection SPARQL)
+
+This connection requires no changes to the collection metadata. It is the bridge between the wiki and the rest of the Media Suite knowledge graph.
+
+## What is built (Phase 1 — complete)
+
+The full pipeline from raw wiki to running MCP server has been implemented and tested.
+
+### Harvest pipeline
+
+```
+wiki.beeldengeluid.nl/api.php
+        │  MediaWiki Action API
+        ▼
+harvest/harvest_articles.py   →  data/articles/{pageid}.json
+        │  raw wikitext + categories + timestamp
+        ▼
+harvest/clean_wikitext.py     →  data/cleaned/{pageid}.json
+        │  plain text, infobox removed
+        ▼
+harvest/extract_structured.py →  data/structured/{pageid}.json
+        │  typed records: persoon / productie / genre / redirect / …
+        ▼
+harvest/link_gtaa.py          →  data/structured/{pageid}.json  (updated)
+        │  gtaa_uri + gtaa_match_confidence added via SPARQL
+        ▼
+index/chunk.py                →  data/chunks/{pageid}.json
+        │  ~800-char sliding window; chunk 0 = structured infobox summary
+        ▼
+index/embed.py                →  data/milvus_wiki.db
+           multilingual-e5-large-instruct embeddings → Milvus
 ```
 
-Options: `--batch-size 50` (default), `--delay 0.5` (seconds between requests), `--output-dir data/articles`, `--pagelist data/pagelist.json`.
+**24,104 articles** harvested, cleaned, extracted, linked, chunked, and embedded.
 
-The pagelist is saved as a checkpoint — re-runs skip the enumeration phase.
-
-### Step 2 — Clean
-
-Strip MediaWiki markup from raw wikitext → plain text. Saves to `data/cleaned/`.
+### MCP server
 
 ```bash
-python3 harvest/clean_wikitext.py
+python3.12 mcp/server.py
 ```
 
-Each output file includes `text` (plain text with infobox removed), `is_redirect`, `has_infobox`, and `infobox_type`.
+Three tools:
 
-### Step 3 — Extract structured data
+**`wiki_search(query, limit=5)`** — semantic search over the Milvus index. Takes a natural language question in Dutch or English and returns ranked excerpts with source URL and last-edited timestamp. Use for open-ended questions: "who were the key presenters of Dutch public television in the 1980s?", "what is a praatprogramma?".
 
-Parse infobox templates → typed structured records. Saves to `data/structured/`.
+**`wiki_lookup(title)`** — exact or near-exact lookup by person name, production title, or topic. Returns a structured summary built from the infobox (birth/death dates, functions, period active, collaborators, known for) plus lead text from the article. This is the primary tool when a specific name is known — e.g. when a researcher clicks on a search result and the interface wants to surface background context. Falls back to semantic search if no exact match is found.
+
+**`wiki_metadata(title)`** — returns article metadata only: page ID, URL, categories, last-edited timestamp, GTAA URI, article type. Useful for resolving a name to a GTAA URI, or checking article freshness before presenting information.
+
+Every tool response includes the article URL, last-edited timestamp, a source note, and a staleness warning for articles not edited in more than two years.
+
+### Infrastructure
+
+The Phase 1 setup is intentionally simple and fully local:
+
+- **Milvus Lite** — the index lives in `data/milvus_wiki.db`, a single local file. No Docker, no server. Uses the same `pymilvus` SDK as a production Milvus cluster — swapping to a real instance is one environment variable: `MILVUS_URI=http://milvus:19530`.
+- **sentence-transformers** — embeddings computed locally with `intfloat/multilingual-e5-large-instruct`. The embedder is behind a one-function interface; replacing it with an HTTP call to the mediasuite-agent embedding API requires changing one class.
+
+## Running
+
+### Prerequisites
 
 ```bash
-python3 harvest/extract_structured.py
+# Harvest pipeline (Python 3.9+)
+pip install -r requirements.txt
+
+# MCP server (Python 3.10+ required by the MCP SDK)
+python3.12 -m pip install -r requirements.txt
 ```
 
-Extracts:
-- **Persoon**: `naam`, `birth_date`, `birth_place`, `death_date`, `death_place`, `functions`, `period_start`, `period_end`, `collaborators`, `known_for`
-- **Productie**: `genre`, `medium`, `period_start`, `period_end`, `persons` (from the Makers section)
-
-Article type is detected from the infobox template name, falling back to categories.
-
-### Step 4 — GTAA entity linking
-
-Match each article to a GTAA concept URI via the Sound and Vision SPARQL endpoint. Updates `data/structured/` files in-place, adding `gtaa_uri` and `gtaa_match_confidence`.
+### Full pipeline (first run)
 
 ```bash
-python3 harvest/link_gtaa.py
+python3 harvest/harvest_articles.py     # ~30 min, fetches 24k articles
+python3 harvest/clean_wikitext.py       # ~10 min
+python3 harvest/extract_structured.py  # ~10 min
+python3 harvest/link_gtaa.py           # ~45 min, SPARQL lookups
+python3 index/chunk.py                 # fast
+python3 index/embed.py                 # slow on CPU — run overnight
 ```
 
-Options: `--workers 5` (parallel SPARQL requests), `--types persoon productie genre`.
+All steps are resumable: re-running skips already-processed files.
 
-Person names are automatically inverted to GTAA format (`"Rob de Nijs"` → `"Nijs, Rob de"`). Confidence values: `exact` (prefLabel match), `alias` (altLabel match), `none`.
-
-**SPARQL endpoint:** `https://cat.apis.beeldengeluid.nl/sparql`
-
-### Step 5 — Embed (coming next)
-
-Chunk cleaned articles and embed into Milvus collection `mediasuite_wiki`.
+### MCP server
 
 ```bash
-python3 index/chunk.py
-python3 index/embed.py
+python3.12 mcp/server.py              # start server (stdio transport)
+python3.12 mcp/server.py --test       # smoke test against the live index
 ```
 
-### Step 6 — MCP server (coming next)
-
-```bash
-python3 mcp/server.py
-```
-
-Exposes `wiki_search`, `wiki_lookup`, and `wiki_metadata` tools.
+To register with a Claude Code session or any MCP client, point at `python3.12 mcp/server.py` as the server command with the repo root as the working directory.
 
 ## Data layout
 
 ```
 data/
-├── pagelist.json        # Checkpoint: all enumerated page IDs and titles
-├── articles/            # Raw JSON per article (gitignored)
-├── cleaned/             # Plain text per article (gitignored)
-└── structured/          # Infobox records + GTAA URIs (gitignored)
+├── pagelist.json        # Enumerated page IDs and titles (harvest checkpoint)
+├── articles/            # Raw JSON per article — gitignored
+├── cleaned/             # Plain text per article — gitignored
+├── structured/          # Infobox records + GTAA URIs — gitignored
+├── chunks/              # Chunk lists per article — gitignored
+└── milvus_wiki.db       # Milvus Lite index — gitignored
 ```
 
-## GTAA connection
+## What is next (Phase 2 — structured store)
 
-Once an article has a `gtaa_uri`, it connects to the rest of the Media Suite linked data infrastructure. A researcher asking about a person can get wiki biographical context alongside collection items from the Sound and Vision archive — via the shared GTAA URI — without any changes to the collection metadata.
+Phase 1 answers questions well when the answer lives in the narrative text of an article. But the wiki's infobox data is highly structured, and some questions are better answered by a database than by a vector search:
+
+- "Which persons were active in Dutch television between 1960 and 1975?"
+- "Which productions are in the genre 'praatprogramma' and aired on VARA?"
+- "Who collaborated with Mies Bouwman?"
+
+Semantic search handles these poorly. A vector index does not know that `period_start=1960` and `period_end=1975` mean "active in this period" — it just sees text.
+
+Phase 2 loads the structured records from `data/structured/` into a SQLite database with typed tables (`persons`, `productions`, `articles`, `links`) and adds a fourth MCP tool, `wiki_query`, that runs named query templates against it. The routing layer can then decide: open-ended question → `wiki_search`, specific relational question → `wiki_query`, known name → `wiki_lookup`.
+
+The SQLite store is also the foundation for Phase 3, where it gets converted to RDF and aligned with the NDE Termennetwerk, making the wiki agent a node in the Dutch heritage linked data network.
 
 ## Status
 
-| Step | Script | Status |
-|---|---|---|
-| Harvest | `harvest/harvest_articles.py` | Done — 24,104 articles |
-| Clean | `harvest/clean_wikitext.py` | Done |
-| Extract | `harvest/extract_structured.py` | Done |
-| GTAA link | `harvest/link_gtaa.py` | Done |
-| Chunk + embed | `index/chunk.py`, `index/embed.py` | Pending |
-| MCP server | `mcp/server.py` | Pending |
-| Sync job | `index/sync.py` | Pending |
+| Phase | Step | Script | Status |
+|---|---|---|---|
+| 1 | Harvest | `harvest/harvest_articles.py` | Done — 24,104 articles |
+| 1 | Clean | `harvest/clean_wikitext.py` | Done |
+| 1 | Extract | `harvest/extract_structured.py` | Done |
+| 1 | GTAA link | `harvest/link_gtaa.py` | Done |
+| 1 | Chunk + embed | `index/chunk.py`, `index/embed.py` | Done |
+| 1 | MCP server | `mcp/server.py` | Done |
+| 1 | Sync job | `index/sync.py` | Pending |
+| 2 | SQLite store | `index/structured_store.py` | Pending |
+| 2 | Named queries | — | Pending |
+| 2 | `wiki_query` tool | `mcp/server.py` | Pending |
+| 3 | RDF export + SPARQL | — | Planned |
 
 ## Relationship to other repos
 
-- **mediasuite-knowledge-base** — documentation KB (how to use Media Suite); separate Milvus collection, do not mix
-- **media-suite-learn-chatbot** — calls both the documentation KB MCP and this wiki MCP
-- **mediasuite-agent** — main agent layer; this MCP server registers with it
+- **mediasuite-knowledge-base** — documentation KB (how to use the Media Suite); separate Milvus collection, separate MCP tools; do not mix with wiki content
+- **media-suite-learn-chatbot** — the chatbot that calls both the documentation KB MCP and this wiki MCP
+- **mediasuite-agent** — the main agent layer (embedding API, Milvus, orchestration); this MCP server registers with it
