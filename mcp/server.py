@@ -3,19 +3,22 @@
 MCP server for the Beeld & Geluid Wiki agent.
 
 Tools:
-  wiki_search(query, limit)  — semantic search over the Milvus index
-  wiki_lookup(title)         — exact/near-exact title lookup
-  wiki_metadata(title)       — article metadata without content
+  wiki_search(query, limit)        — semantic search over the Milvus index
+  wiki_lookup(title)               — exact/near-exact title lookup
+  wiki_metadata(title)             — article metadata without content
+  wiki_query(query_name, params)   — named SPARQL query against Fuseki
 
 Configuration via environment variables:
-  MILVUS_URI   path or URL (default: data/milvus_wiki.db)
+  MILVUS_URI        path or URL (default: data/milvus_wiki.db)
+  FUSEKI_URL        Fuseki base URL (default: http://localhost:3030)
+  FUSEKI_DATASET    dataset name (default: wiki)
 
 Run:
   python3.12 mcp/server.py          # stdio transport (for MCP clients)
-  python3.12 mcp/server.py --test   # smoke-test a live search and exit
+  python3.12 mcp/server.py --test   # smoke-test all tools and exit
 
 Swap to production:
-  MILVUS_URI=http://milvus:19530 python3.12 mcp/server.py
+  MILVUS_URI=http://milvus:19530 FUSEKI_URL=http://fuseki:3030 python3.12 mcp/server.py
 """
 
 from __future__ import annotations
@@ -256,6 +259,43 @@ def wiki_metadata(title: str) -> dict | None:
     return result
 
 
+@mcp.tool()
+def wiki_query(query_name: str, params: dict) -> list[dict]:
+    """
+    Run a named SPARQL query against the wiki knowledge graph in Fuseki.
+
+    Use for precise relational questions the semantic index handles poorly:
+    persons active in a specific period, productions by genre, who collaborated
+    with whom, which productions feature a specific person.
+
+    Available query names and their parameters:
+      persons_by_function        function (str, e.g. "presentator")
+      persons_active_in_period   start_year (int), end_year (int)
+      persons_collaborated_with  person_uri (str, full wiki URL)
+      productions_by_genre       genre (str, e.g. "documentaire")
+      productions_in_period      start_year (int), end_year (int)
+      productions_featuring_person  person_uri (str, full wiki URL)
+      article_for_gtaa_uri       gtaa_uri (str)
+      all_broadcasters           (no params)
+      person_summary             person_uri (str, full wiki URL)
+
+    Args:
+        query_name: One of the named queries listed above.
+        params: Dict of parameters for the query template.
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent))
+    from sparql_queries import get_query, run_query, QUERIES
+
+    if query_name not in QUERIES:
+        return [{"error": f"Unknown query '{query_name}'. Available: {list(QUERIES)}"}]
+    try:
+        query = get_query(query_name, **params)
+        return run_query(query)
+    except Exception as exc:
+        return [{"error": str(exc)}]
+
+
 # ── Smoke test ─────────────────────────────────────────────────────────────────
 
 def _smoke_test() -> None:
@@ -268,6 +308,12 @@ def _smoke_test() -> None:
 
     print("\n=== wiki_metadata('Rob de Nijs') ===")
     pprint.pprint(wiki_metadata("Rob de Nijs"))
+
+    print("\n=== wiki_query: persons_by_function(presentator) ===")
+    pprint.pprint(wiki_query("persons_by_function", {"function": "Presentator"})[:3])
+
+    print("\n=== wiki_query: productions_by_genre(documentaire) ===")
+    pprint.pprint(wiki_query("productions_by_genre", {"genre": "documentaire"})[:3])
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
