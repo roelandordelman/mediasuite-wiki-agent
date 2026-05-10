@@ -475,20 +475,35 @@ MCP tool returns a clear error rather than a silent failure.
 - [x] Wikitext cleaning (`clean_wikitext.py`)
 - [x] Infobox extraction (`extract_structured.py`)
 - [x] GTAA entity linker (`link_gtaa.py`) — run after extraction
-- [ ] Milvus index (`chunk.py`, `embed.py`)
-- [ ] MCP server with `wiki_search`, `wiki_lookup`, `wiki_metadata`
+- [x] Milvus index (`chunk.py`, `embed.py`)
+- [x] MCP server with `wiki_search`, `wiki_lookup`, `wiki_metadata` (`mcp/server.py`)
 - [ ] Sync job (`sync.py`)
 - [x] JSON backup in `data/articles/`
 
-**Phase 2 — Structured store**
-- [ ] SQLite store (`structured_store.py`)
-- [ ] Named query catalogue
-- [ ] `wiki_query` MCP tool
+**Phase 2 — Knowledge graph + structured queries**
+- [x] RDF export (`index/build_rdf.py`) — 302,997 triples
+- [x] Fuseki loader (`index/load_fuseki.py`)
+- [x] Named SPARQL queries (`mcp/sparql_queries.py`) — 8 query templates
+- [x] `wiki_query` MCP tool (`mcp/server.py`)
 
-**Phase 3 — Linked data**
-- [ ] RDF export
-- [ ] SPARQL endpoint
-- [ ] NDE Termennetwerk alignment
+**Chatbot integration**
+- [x] REST API wrapper (`api/serve.py`) — exposes MCP tools as JSON REST endpoints
+- [x] Integrated into `media-suite-learn-chatbot` as a third retrieval path
+
+**Phase 3 — NDE Termennetwerk alignment (deferred)**
+- Planned after NISV infrastructure integration
+- GTAA links are already in the graph; making them discoverable via Termennetwerk
+  is an institutional step, not a technical one.
 
 **Pending from Sound and Vision**
 - [ ] XML dump from infrastructure team (preservation backup)
+
+## Running the REST API
+
+```bash
+# Start REST API (separate from the MCP server)
+python3.12 -m uvicorn api.serve:app --port 8002
+
+# The chatbot expects the wiki API at http://localhost:8002
+# configured via wiki_api.url in media-suite-learn-chatbot/config.yaml
+```
