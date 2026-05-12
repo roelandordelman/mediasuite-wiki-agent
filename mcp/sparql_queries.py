@@ -221,6 +221,24 @@ SELECT DISTINCT ?uri ?name ?type ?modified WHERE {{
 }} ORDER BY DESC(?modified) LIMIT {limit}
 """,
 
+    # Which productions did a broadcaster (omroep) make?
+    # param: broadcaster_name (e.g. "VPRO", "VARA", "NOS")
+    "productions_by_broadcaster": PREFIXES + """
+SELECT DISTINCT ?uri ?name ?genre ?medium ?start ?end WHERE {{
+  {graph} {{
+    ?broadcaster_uri a schema:Organization ;
+                     schema:name "{broadcaster_name}" .
+    ?uri a schema:CreativeWork ;
+         schema:name ?name ;
+         beng:broadcaster ?broadcaster_uri .
+    OPTIONAL {{ ?uri schema:genre ?genre }}
+    OPTIONAL {{ ?uri beng:medium ?medium }}
+    OPTIONAL {{ ?uri beng:periodStart ?start }}
+    OPTIONAL {{ ?uri beng:periodEnd ?end }}
+  }}
+}} ORDER BY ?start ?name
+""",
+
     # Articles linked to a given GTAA concept scheme
     # param: scheme_uri (e.g. "http://data.beeldengeluid.nl/gtaa/Persoonsnamen")
     "articles_by_gtaa_scheme": PREFIXES + """

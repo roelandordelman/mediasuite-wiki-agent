@@ -54,6 +54,10 @@ harvest/extract_structured.py →  data/structured/{pageid}.json
 harvest/link_gtaa.py          →  data/structured/{pageid}.json  (updated)
         │  gtaa_uri + gtaa_match_confidence added via SPARQL
         ▼
+harvest/enrich_wikidata.py    →  data/structured/{pageid}.json  (updated)
+        │  Wikidata birth/death dates → estimated active period
+        │  for persons with GTAA link but no infobox period data
+        ▼
 index/chunk.py                →  data/chunks/{pageid}.json
         │  ~800-char sliding window; chunk 0 = structured infobox summary
         ▼
@@ -106,6 +110,7 @@ python3 harvest/harvest_articles.py     # ~30 min, fetches 24k articles
 python3 harvest/clean_wikitext.py       # ~10 min
 python3 harvest/extract_structured.py  # ~10 min
 python3 harvest/link_gtaa.py           # ~45 min, SPARQL lookups
+python3.12 harvest/enrich_wikidata.py  # ~5 min, fills period gaps via Wikidata P1741
 
 # Semantic index
 python3 index/chunk.py                 # fast
@@ -174,19 +179,19 @@ The knowledge graph handles exactly these questions. The two retrieval paths are
 
 302,997 triples across 16,800 articles loaded into Fuseki:
 
-- **2,313 persons** (`schema:Person`) with birth/death dates, functions, active periods, collaborators, known-for productions
-- **14,384 productions** (`schema:CreativeWork`) with genre, medium, period, contributing persons
-- **90 broadcasters** (`schema:Organization`)
-- **GTAA links** (`skos:exactMatch`) connecting wiki articles to the Sound and Vision controlled vocabulary
+- **2,305 persons** (`schema:Person`) with birth/death dates, functions, active periods, collaborators, known-for productions; 2,146 have a structured active period (1,999 from wiki infobox + 147 from Wikidata enrichment)
+- **14,384 productions** (`schema:CreativeWork`) with genre, medium, period, contributing persons, and broadcaster links (7,013 productions linked to their broadcasting organisation via `beng:broadcaster`)
+- **124 broadcasters and production companies** (`schema:Organization`)
+- **GTAA links** (`skos:exactMatch`) connecting 5,392 wiki articles to the Sound and Vision controlled vocabulary
 - Cross-links between persons and productions where both have wiki articles
 
-Vocabulary: `schema.org` + `skos:exactMatch` for GTAA + `dcterms:modified` for timestamps + `beng:` namespace for wiki-specific properties (`periodStart`, `periodEnd`, `medium`).
+Vocabulary: `schema.org` + `skos:exactMatch` for GTAA + `dcterms:modified` for timestamps + `beng:` namespace for wiki-specific properties (`periodStart`, `periodEnd`, `medium`, `broadcaster`).
 
 Named graph: `https://wiki.beeldengeluid.nl/graph`
 
 ### Named SPARQL queries
 
-14 query templates in `mcp/sparql_queries.py`, callable via `wiki_query` or the REST API:
+15 query templates in `mcp/sparql_queries.py`, callable via `wiki_query` or the REST API:
 
 | Query | Question it answers |
 |---|---|
@@ -199,6 +204,7 @@ Named graph: `https://wiki.beeldengeluid.nl/graph`
 | `productions_in_period` | Which productions aired between year X and Y? |
 | `productions_featuring_person` | Which productions feature person X? |
 | `productions_by_medium` | Which productions are for TV / Radio / Film? |
+| `productions_by_broadcaster` | Which productions did broadcaster X make? |
 | `production_summary` | All structured fields for a specific production |
 | `article_for_gtaa_uri` | Which wiki article is linked to GTAA URI X? |
 | `all_broadcasters` | Which broadcasters are in the graph? |
@@ -216,9 +222,9 @@ The wiki agent is connected to the [media-suite-learn-chatbot](https://github.co
 
 1. **Structural** — Fuseki SPARQL against the Media Suite knowledge graph (tools, collections, workflows)
 2. **Narrative** — ChromaDB semantic search against Media Suite documentation
-3. **Wiki** — Milvus semantic search against the wiki index, via the wiki REST API
+3. **Wiki** — dual-path retrieval via the wiki REST API `/ask` endpoint: keyword-routed SPARQL queries (period, function, genre, broadcaster) + Milvus semantic search; results merged into one context block before being passed to the chatbot LLM
 
-Wiki results are only added to the answer context when cosine similarity ≥ 0.70, so documentation-only questions pay no latency or context penalty.
+SPARQL-matched results (structured lists) are always included. Semantic results are filtered by cosine similarity ≥ 0.70, so documentation-only questions pay no context penalty.
 
 ### REST API
 
@@ -228,21 +234,42 @@ Alongside the MCP server, the wiki exposes a plain JSON REST API for consumption
 python3.12 -m uvicorn api.serve:app --port 8002
 ```
 
-Endpoints: `GET /health`, `POST /search`, `POST /lookup`, `POST /metadata`, `POST /query`
+Endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Liveness check |
+| `POST /ask` | **Primary endpoint for chatbot integration.** Dual-path retrieval: keyword-routed SPARQL (via `wiki_router.py`) + Milvus semantic search. Returns merged context block + source list. |
+| `POST /search` | Raw semantic search — `wiki_search(query, limit)` |
+| `POST /lookup` | Exact/near-exact article lookup — `wiki_lookup(title)` |
+| `POST /metadata` | Article metadata only — `wiki_metadata(title)` |
+| `POST /query` | Named SPARQL query — `wiki_query(query_name, params)` |
 
 The REST API wraps the same tool functions as the MCP server. Running only the REST API (not the MCP server) is sufficient for chatbot integration.
 
 ### Evaluation
 
+Three test scripts, each runnable independently:
+
 ```bash
-# Start wiki REST API, then:
+# Router unit tests — no services required
+python3.12 evaluation/test_router.py           # 35 routing + year-extraction cases
+python3.12 evaluation/test_router.py --verbose # show all selections, not just failures
+
+# SPARQL result correctness — requires Fuseki running
+python3.12 evaluation/test_sparql.py           # count thresholds + known-entity checks
+python3.12 evaluation/test_sparql.py --verbose # show all checks + coverage stats
+python3.12 evaluation/test_sparql.py --quality # data quality checks only
+
+# End-to-end retrieval — requires wiki REST API running on :8002
 python3.12 evaluation/evaluate.py --mode rest --verbose
 ```
 
-Evaluates:
-- **Hit@5, MRR** for `wiki_search` — 15 questions covering persons, genres, productions, English queries, spelling variants
-- **Accuracy** for `wiki_lookup` — 7 exact title lookups including a non-existent title
-- **Pass/fail** for `wiki_query` — 7 named SPARQL queries with result count assertions
+**`test_router.py`** — unit tests for `api/wiki_router.py`: given a question, does the router select the right SPARQL query with the right parameters? Tests year/decade extraction (Dutch + English), person/production period signals, function detection, medium detection, broadcaster detection, and no-match cases.
+
+**`test_sparql.py`** — SPARQL correctness and data quality: count thresholds per named query, known-entity presence checks (e.g. Mies Bouwman in period results, AVRO/VARA/VPRO in broadcaster list), and data quality guards (misclassification regression tests). Coverage stats section shows graph completeness (periodStart coverage, GTAA link coverage, broadcaster link coverage).
+
+**`evaluate.py`** — end-to-end retrieval quality: Hit@5/MRR for `wiki_search`, accuracy for `wiki_lookup`, pass/fail for `wiki_query`.
 
 ## What is next (Phase 3 — deferred)
 
@@ -265,10 +292,14 @@ This is an institutional step — it depends on NISV infrastructure integration 
 | 1 | Sync job | `index/sync.py` | Pending |
 | 2 | RDF graph | `index/build_rdf.py` | Done — 302,997 triples |
 | 2 | Fuseki loader | `index/load_fuseki.py` | Done |
-| 2 | Named SPARQL queries | `mcp/sparql_queries.py` | Done — 14 queries |
+| 2 | Named SPARQL queries | `mcp/sparql_queries.py` | Done — 15 queries |
 | 2 | `wiki_query` tool | `mcp/server.py` | Done |
+| 2 | Broadcaster–production links | `index/build_rdf.py` | Done — 7,013 `beng:broadcaster` triples |
+| 2 | Wikidata person enrichment | `harvest/enrich_wikidata.py` | Done — 147 persons enriched via Wikidata P1741, 113 no match |
 | integration | REST API | `api/serve.py` | Done |
 | integration | Chatbot integration | media-suite-learn-chatbot | Done |
+| integration | Router unit tests | `evaluation/test_router.py` | Done — 35 cases |
+| integration | SPARQL correctness tests | `evaluation/test_sparql.py` | Done — 20 checks |
 | integration | Evaluation framework | `evaluation/evaluate.py` | Done |
 | 3 | NDE Termennetwerk alignment | — | Deferred (institutional) |
 

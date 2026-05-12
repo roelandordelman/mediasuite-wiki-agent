@@ -88,7 +88,13 @@ def _add_persoon(g: Graph, uri: URIRef, record: dict, title_to_uri: dict[str, st
             g.add((uri, BENG.knownForTitle, Literal(name)))
 
 
-def _add_productie(g: Graph, uri: URIRef, record: dict, title_to_uri: dict[str, str]) -> None:
+def _add_productie(
+    g: Graph,
+    uri: URIRef,
+    record: dict,
+    title_to_uri: dict[str, str],
+    title_to_type: dict[str, str],
+) -> None:
     p = record["productie"]
     g.add((uri, RDF.type, SCHEMA.CreativeWork))
     g.add((uri, SCHEMA.name, Literal(record["title"])))
@@ -105,9 +111,16 @@ def _add_productie(g: Graph, uri: URIRef, record: dict, title_to_uri: dict[str, 
         g.add((uri, BENG.periodEnd, Literal(p["period_end"], datatype=XSD.integer)))
 
     for name in p.get("persons") or []:
-        target = title_to_uri.get(name)
-        if target:
-            g.add((uri, SCHEMA.contributor, _uri(target)))
+        target_url = title_to_uri.get(name)
+        if target_url:
+            target_uri = _uri(target_url)
+            kind = title_to_type.get(name, "")
+            if kind == "omroep":
+                g.add((uri, BENG.broadcaster, target_uri))
+            elif kind == "producent_bedrijf":
+                g.add((uri, SCHEMA.productionCompany, target_uri))
+            else:
+                g.add((uri, SCHEMA.contributor, target_uri))
         else:
             g.add((uri, BENG.contributorName, Literal(name)))
 
@@ -123,8 +136,9 @@ def build_rdf(structured_dir: Path, output_path: Path) -> int:
     files = sorted(structured_dir.glob("*.json"))
     log.info("Reading %d structured files …", len(files))
 
-    # Build title → url lookup for cross-linking
+    # Build title → url and title → article_type lookups for cross-linking
     title_to_uri: dict[str, str] = {}
+    title_to_type: dict[str, str] = {}
     records: list[dict] = []
     for path in files:
         try:
@@ -132,6 +146,7 @@ def build_rdf(structured_dir: Path, output_path: Path) -> int:
             records.append(r)
             if r.get("url") and r.get("title"):
                 title_to_uri[r["title"]] = r["url"]
+                title_to_type[r["title"]] = r.get("article_type", "")
         except Exception as exc:
             log.warning("Skipping %s: %s", path.name, exc)
 
@@ -155,7 +170,7 @@ def build_rdf(structured_dir: Path, output_path: Path) -> int:
         if article_type == "persoon" and record.get("persoon"):
             _add_persoon(g, uri, record, title_to_uri)
         elif article_type == "productie" and record.get("productie"):
-            _add_productie(g, uri, record, title_to_uri)
+            _add_productie(g, uri, record, title_to_uri, title_to_type)
         elif article_type in ("omroep", "producent_bedrijf"):
             _add_omroep(g, uri, record)
         else:
