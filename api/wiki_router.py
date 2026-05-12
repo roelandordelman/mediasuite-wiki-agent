@@ -68,6 +68,15 @@ _BROADCASTER_SIGNALS = {
     "broadcasters", "zenders", "stations",
 }
 
+# Known broadcaster names — matched verbatim (case-insensitive) in questions.
+# Used to route to productions_by_broadcaster when a specific name is mentioned.
+_KNOWN_BROADCASTERS = {
+    "VPRO", "VARA", "NOS", "AVRO", "KRO", "NCRV", "TROS", "EO",
+    "VERONICA", "BNN", "NPS", "RVU", "TELEAC", "MAX", "WNL",
+    "HUMAN", "KINK", "AT5", "RTL", "SBS", "NET5",
+    "HILVERSUM", "NTS", "NRC",
+}
+
 _PERSON_PERIOD_SIGNALS = {
     "actief", "active", "werkzaam", "werkten", "werkte",
     "wie was", "who was", "wie waren", "who were",
@@ -164,7 +173,14 @@ def select(question: str) -> list[tuple[str, dict]]:
             selections.append(("productions_by_medium", {"medium": medium}))
 
     # Broadcaster detection
-    if any(s in q_lower for s in _BROADCASTER_SIGNALS):
+    # Specific broadcaster name mentioned → list their productions
+    broadcaster_name = next(
+        (b for b in _KNOWN_BROADCASTERS if b.lower() in q_lower), None
+    )
+    if broadcaster_name:
+        selections.append(("productions_by_broadcaster", {"broadcaster_name": broadcaster_name}))
+    elif any(s in q_lower for s in _BROADCASTER_SIGNALS):
+        # Generic broadcaster question → list all broadcasters
         selections.append(("all_broadcasters", {}))
 
     return selections
@@ -172,20 +188,23 @@ def select(question: str) -> list[tuple[str, dict]]:
 
 # ── SPARQL result formatters ───────────────────────────────────────────────────
 
-def format_sparql_results(query_name: str, rows: list[dict]) -> str:
+def format_sparql_results(query_name: str, rows: list[dict], params: dict | None = None) -> str:
     """Format SPARQL result rows as a readable text block for the LLM."""
     if not rows:
         return ""
 
     formatters = {
-        "persons_active_in_period": _fmt_persons_period,
-        "productions_in_period":    _fmt_productions_period,
-        "persons_by_function":      _fmt_persons_function,
-        "productions_by_genre":     _fmt_productions_genre,
-        "productions_by_medium":    _fmt_productions_medium,
-        "all_broadcasters":         _fmt_broadcasters,
+        "persons_active_in_period":   _fmt_persons_period,
+        "productions_in_period":      _fmt_productions_period,
+        "persons_by_function":        _fmt_persons_function,
+        "productions_by_genre":       _fmt_productions_genre,
+        "productions_by_medium":      _fmt_productions_medium,
+        "all_broadcasters":           _fmt_broadcasters,
+        "productions_by_broadcaster": _fmt_productions_broadcaster,
     }
     fn = formatters.get(query_name, _fmt_generic)
+    if query_name == "productions_by_broadcaster":
+        return fn(rows, broadcaster_name=(params or {}).get("broadcaster_name", ""))
     return fn(rows)
 
 
@@ -288,6 +307,31 @@ def _fmt_productions_medium(rows: list[dict]) -> str:
         line = f"- {name}"
         if start:
             line += f" ({start}–{end})" if end else f" ({start}–)"
+        lines.append(line)
+    if len(rows) > len(sample):
+        lines.append(f"... en {len(rows) - len(sample)} meer.")
+    return "\n".join(lines)
+
+
+def _fmt_productions_broadcaster(rows: list[dict], broadcaster_name: str = "") -> str:
+    if not rows:
+        return ""
+    broadcaster = broadcaster_name or "deze omroep"
+    sample = rows[:50]
+    lines = [
+        _STRUCTURED_HEADER,
+        f"Producties van {broadcaster} ({len(rows)} gevonden, {len(sample)} getoond):",
+    ]
+    for r in sample:
+        name = r.get("name", "?")
+        start = r.get("start", "")
+        end = r.get("end", "")
+        medium = r.get("medium", "")
+        line = f"- {name}"
+        if start:
+            line += f" ({start}–{end})" if end else f" ({start}–)"
+        if medium:
+            line += f" [{medium}]"
         lines.append(line)
     if len(rows) > len(sample):
         lines.append(f"... en {len(rows) - len(sample)} meer.")

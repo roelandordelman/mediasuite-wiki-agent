@@ -101,7 +101,7 @@ def ask(req: AskRequest) -> dict:
             continue
         if rows:
             sparql_hits += len(rows)
-            formatted = format_sparql_results(query_name, rows)
+            formatted = format_sparql_results(query_name, rows, params)
             if formatted:
                 context_parts.append(formatted)
             # Add sources from SPARQL rows that carry a URI
