@@ -507,3 +507,7 @@ python3.12 -m uvicorn api.serve:app --port 8002
 # The chatbot expects the wiki API at http://localhost:8002
 # configured via wiki_api.url in media-suite-learn-chatbot/config.yaml
 ```
+
+## Roadmap
+The shared project roadmap is at `../mediasuite-knowledge-base/docs/roadmap.md`.
+Before starting significant work, check current priorities there.

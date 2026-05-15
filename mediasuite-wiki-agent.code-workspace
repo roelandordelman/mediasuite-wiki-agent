@@ -1,0 +1,14 @@
+{
+  "folders": [
+    { "name": "🔍 wiki-agent", "path": "../mediasuite-wiki-agent" }
+  ],
+  "settings": {
+    "claudeCode.initialPermissionMode": "plan",
+    "window.title": "🔍 wiki-agent — ${activeEditorShort}",
+    "workbench.colorCustomizations": {
+      "titleBar.activeBackground": "#2d1a3a",
+      "titleBar.activeForeground": "#ffffff",
+      "activityBar.background": "#2d1a3a"
+    }
+  }
+}

@@ -10,3 +10,13 @@ stores/fuseki_data/
 __pycache__/
 *.pyc
 .env
+.DS_Store
+.DS_Store
+data/articles/
+data/chunks/
+data/cleaned/
+data/structured/
+data/milvus_wiki.db
+data/pagelist.json
+data/wikidata_enrichment.log
+data/wiki.ttl
